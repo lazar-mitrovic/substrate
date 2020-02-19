@@ -31,6 +31,7 @@ import com.gluonhq.substrate.Constants;
 import com.gluonhq.substrate.model.ClassPath;
 import com.gluonhq.substrate.model.InternalProjectConfiguration;
 import com.gluonhq.substrate.model.ProcessPaths;
+import com.gluonhq.substrate.model.Triplet;
 import com.gluonhq.substrate.util.FileOps;
 import com.gluonhq.substrate.util.Logger;
 import com.gluonhq.substrate.util.ProcessRunner;
@@ -197,6 +198,14 @@ public class IosTargetConfiguration extends DarwinTargetConfiguration {
         } else {
             return deploy.install(app.toString());
         }
+    }
+
+    @Override
+    protected boolean compileAdditionalSources()
+            throws IOException, InterruptedException {
+        if (Constants.OS_DARWIN.equals(projectConfiguration.getHostTriplet().getOs()))
+            return super.compileAdditionalSources();
+        return true; // We will pass precompiled libs
     }
 
     @Override
