@@ -115,9 +115,9 @@ public class Triplet {
         // if the host os and target os are the same, always return true
         if (getOs().equals(target.getOs())) return true;
 
-        // if host is linux and target is ios, fail
-        return (!Constants.OS_LINUX.equals(getOs()) && !Constants.OS_WINDOWS.equals(getOs())) ||
-                !Constants.OS_IOS.equals(target.getOs());
+        // if host is windows and target is ios, fail
+        return (!Constants.OS_WINDOWS.equals(getOs()) ||
+                !Constants.OS_IOS.equals(target.getOs()));
     }
 
     public String getArch() {
