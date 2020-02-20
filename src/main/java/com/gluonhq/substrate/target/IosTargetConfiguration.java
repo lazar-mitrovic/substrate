@@ -57,7 +57,7 @@ public class IosTargetConfiguration extends DarwinTargetConfiguration {
 
     private static final List<String> ioslibs = Arrays.asList(
             "-lpthread", "-lz", "-lstrictmath", "-llibchelper",
-            "-ljava", "-lnio", "-lzip", "-lnet", "-lprefs", "-ljvm");
+            "-ljava", "-lnio", "-lzip", "-lnet", "-lprefs", "-ljvm", "-lffi");
 
     private static final List<String> javafxLibs = Arrays.asList(
             "prism_es2", "glass", "javafx_font", "prism_common", "javafx_iio");
@@ -211,9 +211,20 @@ public class IosTargetConfiguration extends DarwinTargetConfiguration {
     @Override
     protected boolean compileAdditionalSources()
             throws IOException, InterruptedException {
-        if (Constants.OS_DARWIN.equals(projectConfiguration.getHostTriplet().getOs()))
+        if (Constants.OS_DARWIN.equals(projectConfiguration.getHostTriplet().getOs())) {
             return super.compileAdditionalSources();
-        return true; // We will pass precompiled libs
+        } else {
+            // We will pass precompiled libs
+            String appName = projectConfiguration.getAppName();
+            Path workDir = paths.getGvmPath().resolve(appName);
+            Files.createDirectories(workDir);
+            for (String fileName : getAdditionalSourceFiles()) {
+                String objFile = fileName.replace(".m", ".o");
+                FileOps.copyResource(getAdditionalSourceFileLocation()  + fileName, workDir.resolve(fileName));
+                FileOps.copyResource(getAdditionalSourceFileLocation()  + objFile, workDir.resolve(objFile));
+            }
+            return true;
+        }
     }
 
     @Override
