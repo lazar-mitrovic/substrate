@@ -113,7 +113,6 @@ public class IosTargetConfiguration extends DarwinTargetConfiguration {
                 "-isysroot", getSysroot());
     }
 
-    @Override
     List<String> getTargetSpecificAOTCompileFlags() throws IOException {
         boolean graalvm22 = true;
         Path internalLlcPath = projectConfiguration.getGraalPath().resolve("lib").resolve("llvm").resolve("bin");
@@ -223,6 +222,7 @@ public class IosTargetConfiguration extends DarwinTargetConfiguration {
                 FileOps.copyResource(getAdditionalSourceFileLocation()  + fileName, workDir.resolve(fileName));
                 FileOps.copyResource(getAdditionalSourceFileLocation()  + objFile, workDir.resolve(objFile));
             }
+            FileOps.copyResource(getAdditionalSourceFileLocation()  + "jdk.net.jar", workDir.resolve("jdk.net.jar"));
             return true;
         }
     }
@@ -281,6 +281,9 @@ public class IosTargetConfiguration extends DarwinTargetConfiguration {
      */
     @Override
     String processClassPath(String classPath) throws IOException {
+        String appName = projectConfiguration.getAppName();
+        Path workDir = paths.getGvmPath().resolve(appName);
+        classPath=workDir.resolve("jdk.net.jar").toString()+":"+classPath;
         if (!projectConfiguration.isUseJavaFX()) {
             return classPath;
         }
