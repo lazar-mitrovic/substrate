@@ -79,6 +79,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         System.err.println("onCreate called, writing this to System.err");
         super.onCreate(savedInstanceState);
 
+        Log.v(TAG, "loading substrate library");
+        System.loadLibrary("substrate");
+        Log.v(TAG, "loaded substrate library");
+        Log.v(TAG, "loading app library");
+        System.loadLibrary("app");
+        Log.v(TAG, "loaded app library");
+
         getWindow().requestFeature(Window.FEATURE_NO_TITLE);
         getWindow().setSoftInputMode(
                 WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED
@@ -100,9 +107,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
         Log.v(TAG, "surfaceCreated for "+this);
-        Log.v(TAG, "loading substrate library");
-        System.loadLibrary("substrate");
-        Log.v(TAG, "loaded substrate library");
         nativeSetSurface(holder.getSurface());
         DisplayMetrics metrics = new DisplayMetrics();
         getWindowManager().getDefaultDisplay().getMetrics(metrics);

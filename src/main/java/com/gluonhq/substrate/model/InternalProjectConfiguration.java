@@ -33,7 +33,6 @@ import com.gluonhq.substrate.util.Logger;
 import com.gluonhq.substrate.util.ProcessRunner;
 import com.gluonhq.substrate.util.Strings;
 import com.gluonhq.substrate.util.Version;
-import com.gluonhq.substrate.util.XcodeUtils;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -56,6 +55,7 @@ import java.util.regex.Pattern;
  * If this method has not been called, getJavaStaticLibsPath() will return the default location, taking into account
  * the value of javaStaticSdkVersion. If that value is not set, the default value is used.
  */
+@SuppressWarnings("unused")
 public class InternalProjectConfiguration {
 
     private String javaStaticLibs;
@@ -169,16 +169,10 @@ public class InternalProjectConfiguration {
      * the version in <code>javaStaticSdkVersion</code>
      * @return the path to the Java SDK (including at least the libs)
      */
-    public Path getDefaultJavaStaticPath() {
-        return Constants.USER_SUBSTRATE_PATH
-                .resolve("javaStaticSdk")
-                .resolve(getJavaStaticSdkVersion())
-                .resolve(getTargetTriplet().getOsArch())
-                .resolve("labs-staticjdk");
-    }
-
-    private Path getDefaultJavaStaticLibsPath() {
-        return getDefaultJavaStaticPath().resolve("lib").resolve("static");
+    public Path getDefaultJavaStaticLibsPath() {
+        return getGraalPath()
+        .resolve("lib")
+        .resolve(getTargetTriplet().getStaticLibPath());
     }
 
     /**

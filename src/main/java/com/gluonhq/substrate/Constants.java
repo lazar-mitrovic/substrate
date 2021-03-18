@@ -59,6 +59,12 @@ public class Constants {
     public static final String OS_ANDROID = "android";
 
     /**
+     * LibC's
+     */
+    public static final String LIBC_BIONIC = "bionic";
+    public static final String LIBC_GLIBC = "glibc";
+
+    /**
      * Predefined Profiles
      */
     public enum Profile {

@@ -69,13 +69,13 @@ public class IosTargetConfiguration extends DarwinTargetConfiguration {
             "ARKit", "AVKit", "SceneKit", "StoreKit", "ModelIO", "WebKit"
     );
 
-    private String[] capFiles = {"AArch64LibCHelperDirectives.cap",
+    private final String[] capFiles = {"AArch64LibCHelperDirectives.cap",
             "AMD64LibCHelperDirectives.cap", "BuiltinDirectives.cap",
             "JNIHeaderDirectives.cap", "LibFFIHeaderDirectives.cap",
             "LLVMDirectives.cap", "PosixDirectives.cap"};
-    private final String capLocation= "/native/ios/cap/";
+    private final String capLocation = "/native/ios/cap/";
 
-    public IosTargetConfiguration(ProcessPaths paths, InternalProjectConfiguration configuration ) {
+    public IosTargetConfiguration(ProcessPaths paths, InternalProjectConfiguration configuration) {
         super(paths, configuration);
     }
 
@@ -113,8 +113,8 @@ public class IosTargetConfiguration extends DarwinTargetConfiguration {
         return Arrays.asList("-xobjective-c",
                 "-arch", getTargetArch(),
                 "-mios-version-min=11.0",
-                "-I"+projectConfiguration.getGraalPath().resolve("include").toString(),
-                "-I"+projectConfiguration.getGraalPath().resolve("include").resolve("darwin").toString(),
+                "-I" + projectConfiguration.getGraalPath().resolve("include").toString(),
+                "-I" + projectConfiguration.getGraalPath().resolve("include").resolve("darwin").toString(),
                 "-isysroot", getSysroot());
     }
 
@@ -123,8 +123,6 @@ public class IosTargetConfiguration extends DarwinTargetConfiguration {
         return Arrays.asList("-H:CompilerBackend=" + Constants.BACKEND_LLVM,
                 "-H:-SpawnIsolates",
                 "-H:PageSize=16384",
-                "-Dsvm.targetName=iOS",
-                "-Dsvm.targetArch=" + getTargetArch(),
                 "-H:+UseCAPCache",
                 "-H:CAPCacheDir=" + getCapCacheDir().toAbsolutePath().toString());
     }
@@ -146,8 +144,8 @@ public class IosTargetConfiguration extends DarwinTargetConfiguration {
 
     @Override
     List<String> getTargetSpecificObjectFiles() throws IOException {
-        return FileOps.findFile( paths.getGvmPath(), "llvm.o").map( objectFile ->
-           Collections.singletonList(objectFile.toAbsolutePath().toString())
+        return FileOps.findFile(paths.getGvmPath(), "llvm.o").map(objectFile ->
+                Collections.singletonList(objectFile.toAbsolutePath().toString())
         ).orElseThrow();
     }
 
@@ -175,7 +173,7 @@ public class IosTargetConfiguration extends DarwinTargetConfiguration {
 
     @Override
     protected List<Path> getStaticJDKLibPaths() throws IOException {
-        return Arrays.asList(fileDeps.getJavaSDKLibsPath());
+        return Collections.singletonList(fileDeps.getJavaSDKLibsPath());
     }
 
     @Override
@@ -298,7 +296,7 @@ public class IosTargetConfiguration extends DarwinTargetConfiguration {
             Files.createDirectory(capPath);
         }
         for (String cap : capFiles) {
-            FileOps.copyResource(capLocation+cap, capPath.resolve(cap));
+            FileOps.copyResource(capLocation + cap, capPath.resolve(cap));
         }
         return capPath;
     }

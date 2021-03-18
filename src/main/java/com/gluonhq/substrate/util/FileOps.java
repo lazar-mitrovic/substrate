@@ -105,7 +105,7 @@ public class FileOps {
         Path[] paths = {null};
         SimpleFileVisitor<Path> visitor = new SimpleFileVisitor<>() {
             @Override
-            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
                 Path fileName = file.getFileName();
                 if (fileName != null && fileName.toString().endsWith(name)) {
                     paths[0] = file;
@@ -115,7 +115,7 @@ public class FileOps {
             }
 
             @Override
-            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
                 return FileVisitResult.CONTINUE;
             }
         };
@@ -327,6 +327,7 @@ public class FileOps {
         try {
             return !(Files.exists(path) && Files.isDirectory(path) && Files.list(path).findAny().isPresent());
         } catch (IOException e) {
+            Logger.logDebug(e.getMessage());
         }
         return false;
     }
@@ -463,7 +464,7 @@ public class FileOps {
      */
     @SuppressWarnings("unchecked")
     public static Map<String, String> getHashMap(String nameFile) {
-        Map<String, String> hashes = null;
+        Map<String, String> hashes;
         if (!Files.exists(Paths.get(nameFile))) {
             return null;
         }
@@ -562,9 +563,8 @@ public class FileOps {
      * Downloads a file from a given URL (non null) into a given path (non null)
      * @param fileUrl the URL of the file
      * @param filePath the absolute path of the file where the remote file be downloaded into
-     * @throws IOException
      */
-    public static void downloadFile(URL fileUrl, Path filePath) throws IOException {
+    public static void downloadFile(URL fileUrl, Path filePath) {
         Objects.requireNonNull(fileUrl);
         Objects.requireNonNull(filePath);
         ProgressDownloader.downloadFile(fileUrl, filePath);
@@ -580,6 +580,20 @@ public class FileOps {
      * @throws IOException
      */
     public static Map<String, String> unzipFile(Path sourceZip, Path targetDir) throws IOException {
+        return unzipFile(sourceZip, targetDir, false);
+    }
+
+    /**
+     * Extracts the files from a given zip file into a target folder, and returns a map
+     * with the names of the files and their checksum values.
+     * In the case that the file is not a valid zip, the returned map will be empty.
+     * @param sourceZip the path of a non null zip file
+     * @param targetDir the path of a folder where the zip file will be extracted
+     * @param flattenDirs whether to flatten zip directory structure
+     * @return a map with the file names and their checksum values
+     * @throws IOException
+     */
+    public static Map<String, String> unzipFile(Path sourceZip, Path targetDir, Boolean flattenDirs) throws IOException {
         Objects.requireNonNull(sourceZip);
         Objects.requireNonNull(targetDir);
         if (!Files.exists(sourceZip)) {
@@ -595,9 +609,14 @@ public class FileOps {
         try (ZipInputStream zis = new ZipInputStream(new FileInputStream(sourceZip.toFile()))) {
             ZipEntry zipEntry;
             while ((zipEntry = zis.getNextEntry()) != null) {
-                Path destPath = targetDir.resolve(zipEntry.getName());
+                Path destPath;
+                if (!flattenDirs) {
+                    destPath = targetDir.resolve(zipEntry.getName());
+                } else {
+                    destPath = targetDir.resolve(new File(zipEntry.getName()).getName());
+                }
                 if (zipEntry.isDirectory()) {
-                    if (!Files.exists(destPath)) {
+                    if (!Files.exists(destPath) && !flattenDirs) {
                         Files.createDirectories(destPath);
                     }
                 } else {
@@ -641,6 +660,31 @@ public class FileOps {
      */
     public static void downloadAndUnzip(String sourceUrl, Path destPath, String fileName,
                                         String dirName, String... levels) throws IOException {
+        downloadAndUnzip(sourceUrl, destPath, fileName, false, dirName, levels);
+    }
+    /**
+     * Downloads a zip file from the specified sourceUrl into the destPath where a file
+     * named fileName will be created.
+     * Once the zip file is downloaded, it will be unpacked into the location that starts at
+     * the destPath, and is resolved under destPath/dirName/level1/...
+     * A file with the checksums of all the files in the zip will be generated with name
+     * "dirName-levelN.md5" under the final path: destPath/dirName/.../levelN/subDir-levelN.md5, or
+     * "dirName.md5" under the final path: destPath/dirName/subDir.md5, if levels are not provided.
+     *
+     * @param sourceUrl a string with the location of a zip file, e.g. https://download2.gluonhq.com/substrate/bar/foo.zip
+     * @param destPath the path where the file zip file will be downloaded, e.g. /opt/bar
+     * @param fileName the name of the file that will be downloaded, e.g. foo.zip
+     * @param dirName the folder under destPath, not null, e.g. foo1
+     * @param levels an optional number of folders under dirName
+     *               (null or empty values will be skipped),
+     *               e.g. foo2, foo3, so the zip file will be downloaded into /opt/bar/foo.zip
+     *              The contents of this zip file will be installed into
+     *              /opt/bar/foo1/foo2/foo3, and also the file
+     *               /opt/bar/foo1/foo2/foo3/foo1-foo3.md5 will be created
+     * @throws IOException
+     */
+    public static void downloadAndUnzip(String sourceUrl, Path destPath, String fileName, Boolean flattened,
+                                        String dirName, String... levels) throws IOException {
         Objects.requireNonNull(dirName);
 
         String md5name = levels == null ? dirName + ".md5" :
@@ -665,7 +709,7 @@ public class FileOps {
         Files.createDirectories(zipDir);
 
         // 3. Extract zip from zipPath into zipDir
-        Map<String, String> hashes = FileOps.unzipFile(zipPath, zipDir);
+        Map<String, String> hashes = FileOps.unzipFile(zipPath, zipDir, flattened);
 
         // 4. Write hashes file into zipDir
         try (FileOutputStream fos =
@@ -778,16 +822,18 @@ public class FileOps {
                 connection = (HttpURLConnection) url.openConnection();
                 connection.setRequestMethod("HEAD");
                 contentLength = connection.getContentLength();
-            } catch ( Exception e ) { }
+            } catch (Exception e) {
+                Logger.logDebug(e.getMessage());
+            }
             return contentLength;
         }
     }
 
     private static final class RBCWrapper implements ReadableByteChannel {
         private long readSoFar;
-        private long expectedSize;
-        private ReadableByteChannel rbc;
-        private ProgressDownloader progressDownloader;
+        private final long expectedSize;
+        private final ReadableByteChannel rbc;
+        private final ProgressDownloader progressDownloader;
 
         RBCWrapper( ReadableByteChannel rbc, long expectedSize, ProgressDownloader progressDownloader) {
             this.progressDownloader = progressDownloader;

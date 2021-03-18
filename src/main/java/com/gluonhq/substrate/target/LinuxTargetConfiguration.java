@@ -45,6 +45,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.function.Predicate;
@@ -83,12 +84,12 @@ public class LinuxTargetConfiguration extends PosixTargetConfiguration {
             "-lWTF", "-licuuc", "-licudata"
     );
 
-    private String[] capFiles = {"AArch64LibCHelperDirectives.cap",
+    private final String[] capFiles = {"AArch64LibCHelperDirectives.cap",
             "AMD64LibCHelperDirectives.cap", "BuiltinDirectives.cap",
             "JNIHeaderDirectives.cap", "LibFFIHeaderDirectives.cap",
             "PosixDirectives.cap"};
 
-    private String llvmCapFile = "LLVMDirectives.cap";
+    private final String llvmCapFile = "LLVMDirectives.cap";
 
     private final String capLocation= "/native/linux-aarch64/cap/";
 
@@ -121,7 +122,7 @@ public class LinuxTargetConfiguration extends PosixTargetConfiguration {
     @Override
     protected List<Path> getStaticJDKLibPaths() throws IOException {
         if (crossCompile) {
-            return Arrays.asList(fileDeps.getJavaSDKLibsPath());
+            return Collections.singletonList(fileDeps.getJavaSDKLibsPath());
         }
         return super.getStaticJDKLibPaths();
     }
@@ -130,8 +131,8 @@ public class LinuxTargetConfiguration extends PosixTargetConfiguration {
     List<String> getTargetSpecificJavaLinkLibraries(){
         List<String> targetLibraries = new ArrayList<>();
 
-        Path javaStaticLibPath = null;
-        Path graalClibsPath = getCLibPath();
+        Path javaStaticLibPath;
+        Path graalClibsPath = getTargetCLibPath();
         try {
             javaStaticLibPath = getStaticJDKLibPaths().get(0);
         } catch (Exception ex) {
@@ -206,7 +207,6 @@ public class LinuxTargetConfiguration extends PosixTargetConfiguration {
             return super.getTargetSpecificAOTCompileFlags();
         }
         ArrayList<String> flags = new ArrayList<>(Arrays.asList(
-                "-Dsvm.targetArch=" + projectConfiguration.getTargetTriplet().getArch(),
                 "-H:+UseCAPCache",
                 "-H:CAPCacheDir=" + getCapCacheDir().toAbsolutePath().toString(),
                 "-H:CompilerBackend=" + projectConfiguration.getBackend()));
@@ -215,11 +215,11 @@ public class LinuxTargetConfiguration extends PosixTargetConfiguration {
 
     @Override
     protected List<String> getTargetSpecificCCompileFlags() {
-        List<String> flags = new ArrayList<>(Arrays.asList("-I" + 
+        List<String> flags = new ArrayList<>(Arrays.asList("-I" +
             projectConfiguration.getGraalPath().resolve("include").toString(),
             "-I" + projectConfiguration.getGraalPath().resolve("include").resolve("linux").toString()
             ));
-            
+
         if (projectConfiguration.getTargetTriplet().getArch().equals(Constants.ARCH_AARCH64)) {
             flags.add("-DAARCH64");
         }

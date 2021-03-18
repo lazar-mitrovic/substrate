@@ -29,6 +29,8 @@ package com.gluonhq.substrate.model;
 
 import com.gluonhq.substrate.Constants;
 
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Locale;
 
 import static com.gluonhq.substrate.Constants.*;
@@ -43,6 +45,7 @@ public class Triplet {
     private String arch;
     private String vendor;
     private String os;
+    private String libc;
 
     /**
      * Creates a new triplet for the current runtime
@@ -94,36 +97,43 @@ public class Triplet {
                 this.arch = ARCH_AMD64;
                 this.vendor = VENDOR_LINUX;
                 this.os = OS_LINUX;
+                this.libc = LIBC_GLIBC;
                 break;
             case LINUX_AARCH64:
                 this.arch = ARCH_AARCH64;
                 this.vendor = VENDOR_LINUX;
                 this.os = OS_LINUX;
+                this.libc = LIBC_GLIBC;
                 break;
             case MACOS:
                 this.arch = ARCH_AMD64;
                 this.vendor = VENDOR_APPLE;
                 this.os = OS_DARWIN;
+                this.libc = null;
                 break;
             case WINDOWS:
                 this.arch = ARCH_AMD64;
                 this.vendor = VENDOR_MICROSOFT;
                 this.os = OS_WINDOWS;
+                this.libc = null;
                 break;
             case IOS:
                 this.arch = ARCH_ARM64;
                 this.vendor = VENDOR_APPLE;
                 this.os = OS_IOS;
+                this.libc = null;
                 break;
             case IOS_SIM:
                 this.arch = ARCH_AMD64;
                 this.vendor = VENDOR_APPLE;
                 this.os = OS_IOS;
+                this.libc = null;
                 break;
             case ANDROID:
                 this.arch = ARCH_AARCH64;
                 this.vendor = VENDOR_LINUX;
                 this.os = OS_ANDROID;
+                this.libc = LIBC_BIONIC;
                 break;
             default:
                 throw new IllegalArgumentException("Triplet for profile "+profile+" is not supported yet");
@@ -167,6 +177,14 @@ public class Triplet {
         this.os = os;
     }
 
+    public String getLibc() {
+        return libc;
+    }
+
+    public void setLibc(String libc) {
+        this.libc = libc;
+    }
+
     public String getArchOs() {
         return this.arch+"-"+this.os;
     }
@@ -176,16 +194,32 @@ public class Triplet {
     }
 
     /**
-     * returns os-arch but use amd64 instead of x86_64.
+     * returns os-arch in format accepted by --target parameter
      * This should become the default
-     * @return
+     * @return value of respective target parameter
      */
-    public String getOsArch2() {
+    public String getTargetValue() {
         String myarch = this.arch;
         if (myarch.equals("x86_64")) {
             myarch = "amd64";
         }
+        if (myarch.equals(ARCH_AMD64)) {
+            myarch = ARCH_AARCH64;
+        }
         return this.os+"-"+myarch;
+    }
+
+    /**
+     * Returns path from "lib" directory to concrete library directory for said triplet
+     * e.g. : static / os-arch / libc
+     * @return
+     */
+    public Path getStaticLibPath() {
+        Path staticLibs = Paths.get("static", getTargetValue());
+        if (getOs().equals(OS_LINUX) || getOs().equals(OS_ANDROID)) {
+            staticLibs = staticLibs.resolve(getLibc());
+        }
+        return staticLibs;
     }
 
     @Override

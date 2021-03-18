@@ -207,7 +207,7 @@ public final class FileDeps {
         }
 
         Path javaStaticLibs = configuration.getJavaStaticLibsPath();
-        Path defaultJavaStaticPath = configuration.getDefaultJavaStaticPath();
+        Path defaultJavaStaticPath = configuration.getDefaultJavaStaticLibsPath();
         boolean customJavaLocation = configuration.useCustomJavaStaticLibs();
 
         boolean downloadJavaStatic = false;
@@ -341,7 +341,7 @@ public final class FileDeps {
             }
 
         } catch (IOException | InterruptedException e) {
-            throw new RuntimeException("Error downloading zips: " + e.getMessage());
+            throw new RuntimeException("Error downloading zips: " + e.getMessage(), e);
         }
         Logger.logDebug("Setup dependencies done");
 
@@ -372,12 +372,16 @@ public final class FileDeps {
         String javaZip = Strings.substitute(JAVA_STATIC_ZIP, Map.of(
             "version", configuration.getJavaStaticSdkVersion(),
             "target", target));
+
+        String[] staticLibPath = configuration.getTargetTriplet().getStaticLibPath().toString().split(File.separator);
+        staticLibPath = Arrays.copyOfRange(staticLibPath, 1, staticLibPath.length); // remove "static" directory
+
         FileOps.downloadAndUnzip(JAVA_STATIC_URL + javaZip,
-                Constants.USER_SUBSTRATE_PATH,
+                configuration.getGraalPath().resolve("lib"),
                 javaZip,
-                "javaStaticSdk",
-                configuration.getJavaStaticSdkVersion(),
-                configuration.getTargetTriplet().getOsArch());
+                true,
+                "static",
+                staticLibPath);
         Logger.logInfo("Java static libs downloaded successfully");
     }
 

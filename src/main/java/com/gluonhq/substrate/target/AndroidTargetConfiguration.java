@@ -87,7 +87,7 @@ public class AndroidTargetConfiguration extends PosixTargetConfiguration {
     private final List<String> linkFlags = Arrays.asList("-target",
             ANDROID_TRIPLET + ANDROID_MIN_SDK_VERSION, "-fPIC", "-fuse-ld=gold",
             "-Wl,--rosegment,--gc-sections,-z,noexecstack", "-shared",
-            "-landroid", "-llog", "-lffi", "-llibchelper", "-static-libstdc++");
+            "-landroid", "-llog", "-lffi", "-llibchelper");
     private final List<String> javafxLinkFlags = new ArrayList<>(Arrays.asList(WL_WHOLE_ARCHIVE,
             "-lprism_es2_monocle", "-lglass_monocle", "-ljavafx_font_freetype", "-ljavafx_iio", WL_NO_WHOLE_ARCHIVE,
             "-lGLESv2", "-lEGL", "-lfreetype"));
@@ -101,18 +101,23 @@ public class AndroidTargetConfiguration extends PosixTargetConfiguration {
         this.ndk = fileDeps.getAndroidNDKPath().toString();
         this.hostPlatformFolder = Paths.get(this.ndk, "toolchains", "llvm", "prebuilt", configuration.getHostTriplet().getOsArch()).toString();
 
+        String targetArch = configuration.getTargetTriplet().getArch();
+
         Path ldguess = Paths.get(hostPlatformFolder, "bin", "ld.lld");
         this.ldlld = Files.exists(ldguess) ? ldguess : null;
 
-        Path clangguess = Paths.get(hostPlatformFolder, "bin", "clang");
+        Path clangguess = Paths.get(hostPlatformFolder, "bin", targetArch+"-linux-android23-clang");
         this.clang = Files.exists(clangguess) ? clangguess : null;
-        Path clangppguess = Paths.get(hostPlatformFolder, "bin", "clang++");
+
+        Path clangppguess = Paths.get(hostPlatformFolder, "bin", targetArch+"-linux-android23-clang++");
         this.clangpp = Files.exists(clangppguess) ? clangppguess : null;
 
         projectConfiguration.setBackend(Constants.BACKEND_LIR);
 
         Path objdumpguess = Paths.get(hostPlatformFolder, ANDROID_TRIPLET, "bin", "objdump");
         this.objdump = Files.exists(objdumpguess) ? objdumpguess : null;
+
+        this.externalLinking = false;
     }
 
     @Override
@@ -218,12 +223,10 @@ public class AndroidTargetConfiguration extends PosixTargetConfiguration {
     List<String> getTargetSpecificAOTCompileFlags() throws IOException {
         ArrayList<String> flags = new ArrayList<String>(Arrays.asList(
                 "-H:-SpawnIsolates",
-                "-Dsvm.targetArch=" + projectConfiguration.getTargetTriplet().getArch(),
                 "-H:+ForceNoROSectionRelocations",
-                "--libc=bionic",
-                "-H:+UseCAPCache",
                 "-H:CAPCacheDir=" + getCapCacheDir().toAbsolutePath().toString(),
-                "-H:CompilerBackend=" + projectConfiguration.getBackend()));
+                "-H:CompilerBackend=" + projectConfiguration.getBackend(),
+                "-H:CCompilerPath=" + this.clang));
         if (projectConfiguration.isUseLLVM()) {
             flags.add("-H:CustomLD=" + ldlld.toAbsolutePath().toString());
         }
@@ -274,8 +277,7 @@ public class AndroidTargetConfiguration extends PosixTargetConfiguration {
 
     @Override
     String getLinkOutputName() {
-        String appName = projectConfiguration.getAppName();
-        return "lib" + appName + ".so";
+        return "libsubstrate.so";
     }
 
     @Override
@@ -398,7 +400,10 @@ public class AndroidTargetConfiguration extends PosixTargetConfiguration {
         }
 
         Path libsubstrate = paths.getAppPath().resolve(getLinkOutputName());
+        Path libapp = paths.getAppPath().resolve("libapp.so");
         Files.copy(libsubstrate, projectLibsLocation.resolve("libsubstrate.so"), StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(libapp, projectLibsLocation.resolve("libapp.so"), StandardCopyOption.REPLACE_EXISTING);
+
     }
 
     /**

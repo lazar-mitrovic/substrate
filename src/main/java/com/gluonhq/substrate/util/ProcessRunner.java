@@ -360,7 +360,7 @@ public class ProcessRunner {
         ProcessBuilder pb = new ProcessBuilder(args);
         String join = pb.command().stream().map(s -> {
             if (!s.isEmpty() && passwords.contains(s)) {
-                return s.substring(0, 1) + "******";
+                return s.charAt(0) + "******";
             }
             return s;
         }).collect(Collectors.joining(" "));
@@ -413,7 +413,7 @@ public class ProcessRunner {
             return;
         }
 
-        Path log = processLogPath.resolve("process-" + processName + "-" + System.currentTimeMillis() + ".log");
+        Path log = processLogPath.resolve("process-" + processName.replace(" ", "-") + "-" + System.currentTimeMillis() + ".log");
         if (failure) {
             Logger.logInfo("Logging process [" + processName + "] to file: " + log);
         } else {

@@ -46,6 +46,7 @@ import java.io.InputStream;
 import java.io.OutputStreamWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -61,7 +62,7 @@ import java.util.stream.Stream;
 /**
  * AbstractTargetConfiguration is the main class that implements the necessary
  * methods to compile, link and run a native image
- *
+ * <p>
  * It is extended by different subclasses according to the selected target OS
  */
 public abstract class AbstractTargetConfiguration implements TargetConfiguration {
@@ -71,14 +72,13 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
             "png", "jpg", "jpeg", "gif", "bmp", "ttf", "raw",
             "xml", "fxml", "css", "gls", "json", "dat",
             "license", "frag", "vert", "obj", "mtl", "js");
-    private static final List<String> ENABLED_FEATURES = Arrays.asList(
+    private static final List<String> ENABLED_FEATURES = Collections.singletonList(
             "org.graalvm.home.HomeFinderFeature"
     );
 
     private static final List<String> baseNativeImageArguments = Arrays.asList(
             "-Djdk.internal.lambda.eagerlyInitialize=false",
             "--no-server",
-            "-H:+ExitAfterRelocatableImageWrite",
             "-H:+SharedLibrary",
             "-H:+AddAllCharsets",
             "-H:+ReportExceptionStackTraces",
@@ -94,9 +94,11 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
     final FileDeps fileDeps;
     final InternalProjectConfiguration projectConfiguration;
     final ProcessPaths paths;
+    protected boolean externalLinking = true;
     protected final boolean crossCompile;
 
-    private List<String> defaultAdditionalSourceFiles = Collections.singletonList("launcher.c");
+
+    private final List<String> defaultAdditionalSourceFiles = Collections.singletonList("launcher.c");
 
     AbstractTargetConfiguration(ProcessPaths paths, InternalProjectConfiguration configuration) {
         this.projectConfiguration = configuration;
@@ -117,6 +119,10 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
      */
     @Override
     public boolean compile() throws IOException, InterruptedException {
+        if (!externalLinking) {
+            ensureClibs();
+            fileDeps.getJavaSDKLibsPath();
+        }
         String processedClasspath = validateCompileRequirements();
 
         extractNativeLibs(processedClasspath);
@@ -129,6 +135,9 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
 
         baseNativeImageArguments.forEach(compileRunner::addArg);
 
+        if (externalLinking) {
+            compileRunner.addArg("-H:+ExitAfterRelocatableImageWrite");
+        }
         compileRunner.addArgs(getEnabledFeatures());
 
         compileRunner.addArg(createTempDirectoryArg());
@@ -149,7 +158,7 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
             String bundles = String.join(",", bundlesList);
             compileRunner.addArg("-H:IncludeResourceBundles=" + bundles);
         }
-        compileRunner.addArg(getJniPlatformArg());
+        compileRunner.addArg(getTargetPlatformArg());
         compileRunner.addArg(Constants.NATIVE_IMAGE_ARG_CLASSPATH);
         compileRunner.addArg(FileOps.createPathingJar(paths.getTmpPath(), processedClasspath));
         compileRunner.addArgs(projectConfiguration.getCompilerArgs());
@@ -168,22 +177,20 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
     }
 
     /**
-    * Links a previously created objectfile with the required
-    * dependencies into a native executable.
-    * @return true if linking succeeded, false otherwise
-    */
+     * Links a previously created objectfile with the required
+     * dependencies into a native executable.
+     *
+     * @return true if linking succeeded, false otherwise
+     */
     @Override
     public boolean link() throws IOException, InterruptedException {
         compileAdditionalSources();
         ensureClibs();
 
         String appName = projectConfiguration.getAppName();
-        String objectFilename = projectConfiguration.getMainClassName().toLowerCase(Locale.ROOT) + "." + getObjectFileExtension();
+        String mainClassLower = projectConfiguration.getMainClassName().toLowerCase(Locale.ROOT);
+        String objectFilename = mainClassLower + "." + getObjectFileExtension();
         Path gvmPath = paths.getGvmPath();
-        Path objectFile = FileOps.findFile(gvmPath, objectFilename).orElseThrow( () ->
-            new IllegalArgumentException(
-                    "Linking failed, since there is no objectfile named " + objectFilename + " under " + gvmPath.toString())
-        );
 
         ProcessRunner linkRunner = new ProcessRunner(getLinker());
 
@@ -194,18 +201,32 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
                 .map(sourceFile -> gvmAppPath.resolve(sourceFile).toString())
                 .collect(Collectors.toList()));
 
-        linkRunner.addArg(objectFile.toString());
+        if (externalLinking) {
+            Path objectFile = FileOps.findFile(gvmPath, objectFilename).orElseThrow(() ->
+                    new IllegalArgumentException(
+                            "Linking failed, since there is no objectfile named " + objectFilename + " under " + gvmPath.toString())
+            );
+            linkRunner.addArg(objectFile.toString());
+        } else {
+            String sharedLibFilename = mainClassLower + "." + getSharedLibraryFileExtension();
+            FileOps.copyFile(gvmAppPath.resolve(sharedLibFilename), Paths.get(getAppPath("libapp."+getSharedLibraryFileExtension())));
+        }
+
         linkRunner.addArgs(getTargetSpecificObjectFiles());
 
         linkRunner.addArgs(getNativeCodeList().stream()
-            .map(s -> s.replaceAll("\\..*", "." + getObjectFileExtension()))
-            .distinct()
-            .map(sourceFile -> gvmAppPath.resolve(sourceFile).toString())
-            .collect(Collectors.toList()));
+                .map(s -> s.replaceAll("\\..*", "." + getObjectFileExtension()))
+                .distinct()
+                .map(sourceFile -> gvmAppPath.resolve(sourceFile).toString())
+                .collect(Collectors.toList()));
 
         linkRunner.addArgs(getTargetSpecificJavaLinkLibraries());
         linkRunner.addArgs(getTargetSpecificLinkFlags(projectConfiguration.isUseJavaFX(),
                 projectConfiguration.isUsePrismSW()));
+
+        if (!externalLinking) {
+            linkRunner.addArgs("-L"+paths.getAppPath(), "-lapp");
+        }
 
         linkRunner.addArgs(getTargetSpecificLinkOutputFlags());
 
@@ -239,6 +260,7 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
 
     /**
      * Runs the generated native image
+     *
      * @param appPath Path to the application to be run
      * @param appName application name
      * @return a string with the last logged output of the process
@@ -264,6 +286,7 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
     /**
      * Run the generated native image and returns true if the process ended
      * successfully
+     *
      * @return true if the process ended successfully, false otherwise
      * @throws IOException
      * @throws InterruptedException
@@ -304,10 +327,10 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
         processRunner.addArg("-I" + workDir.toString());
 
         for (String fileName : getAdditionalSourceFiles()) {
-            FileOps.copyResource(getAdditionalSourceFileLocation()  + fileName, workDir.resolve(fileName));
+            FileOps.copyResource(getAdditionalSourceFileLocation() + fileName, workDir.resolve(fileName));
             processRunner.addArg(fileName);
         }
-        
+
         Path nativeCodeDir = paths.getNativeCodePath();
         if (Files.isDirectory(nativeCodeDir)) {
             FileOps.copyDirectory(nativeCodeDir, workDir);
@@ -316,9 +339,9 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
         processRunner.addArgs(getNativeCodeList());
 
         for (String fileName : getAdditionalHeaderFiles()) {
-            FileOps.copyResource(getAdditionalSourceFileLocation()  + fileName, workDir.resolve(fileName));
+            FileOps.copyResource(getAdditionalSourceFileLocation() + fileName, workDir.resolve(fileName));
         }
-  
+
         int result = processRunner.runProcess("compile-additional-sources", workDir.toFile());
         // we need more checks (e.g. do launcher.o and thread.o exist?)
         return result == 0;
@@ -338,12 +361,11 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
         return processedClasspath;
     }
 
-    private String getJniPlatformArg() {
-        String jniPlatform = getJniPlatform();
-        return "-Dsvm.platform=org.graalvm.nativeimage.Platform$" + jniPlatform;
+    private String getTargetPlatformArg() {
+        return "--target=" + getTargetPlatform();
     }
 
-    private String getJniPlatform() {
+    private String getTargetPlatform() {
         Triplet target = projectConfiguration.getTargetTriplet();
         String os = target.getOs();
         String arch = target.getArch();
@@ -351,20 +373,20 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
             case Constants.OS_LINUX:
                 switch (arch) {
                     case Constants.ARCH_AMD64:
-                        return "LINUX_AMD64";
+                        return "linux-amd64";
                     case Constants.ARCH_AARCH64:
-                        return "LINUX_AARCH64";
+                        return "linux-aarch64";
                     default:
                         throw new IllegalArgumentException("No support yet for " + os + ":" + arch);
                 }
             case Constants.OS_IOS:
-                return "IOS_AARCH64";
+                return "ios-aarch64";
             case Constants.OS_DARWIN:
-                return "DARWIN_AMD64";
+                return "darwin-amd64";
             case Constants.OS_WINDOWS:
-                return "WINDOWS_AMD64";
+                return "windows-amd64";
             case Constants.OS_ANDROID:
-                return "LINUX_AARCH64";
+                return "android-aarch64";
             default:
                 throw new IllegalArgumentException("No support yet for " + os);
         }
@@ -377,17 +399,18 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
      */
     private void ensureClibs() throws IOException {
         Triplet target = projectConfiguration.getTargetTriplet();
-        Path clibPath = getCLibPath();
+        Path clibPath = getTargetCLibPath();
         if (FileOps.isDirectoryEmpty(clibPath)) {
             String url = Strings.substitute(URL_CLIBS_ZIP, Map.of("osarch", target.getOsArch()));
             FileOps.downloadAndUnzip(url,
                     clibPath.getParent().getParent(),
                     "clibraries.zip",
                     "clibraries",
-                    target.getOsArch2());
+                    target.getTargetValue());
+            FileOps.copyDirectory(getHostCLibPath().resolve("include"), clibPath.resolve("include"));
         }
         if (FileOps.isDirectoryEmpty(clibPath)) {
-            throw new IOException("No clibraries found for the required architecture in "+clibPath);
+            throw new IOException("No clibraries found for the required architecture in " + clibPath);
         }
         checkPlatformSpecificClibs(clibPath);
     }
@@ -408,7 +431,7 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
      * Creates a list of Paths that will be added to the library search path for the linker.
      * Targets are allowed to override this, e.g. in case they don't want the static JDK
      * directory on the library path (see https://github.com/gluonhq/substrate/issues/879)
-     *
+     * <p>
      * Note: we should probably invert this logic: the static library path should not be
      * used as linkLibraryPath unless explicitly asked by the target.
      *
@@ -421,7 +444,7 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
             linkerLibraryPaths.add(fileDeps.getJavaFXSDKLibsPath());
         }
 
-        linkerLibraryPaths.add(getCLibPath());
+        linkerLibraryPaths.add(getTargetCLibPath());
         linkerLibraryPaths.addAll(getStaticJDKLibPaths());
 
         return linkerLibraryPaths;
@@ -441,7 +464,7 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
     }
 
     private String createTempDirectoryArg() throws IOException {
-        Path  tmpPath = paths.getTmpPath();
+        Path tmpPath = paths.getTmpPath();
         FileOps.rmdir(tmpPath);
         String tmpDir = tmpPath.toFile().getAbsolutePath();
         return "-H:TempDirectory=" + tmpDir;
@@ -506,7 +529,7 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
     private Path createReflectionConfig(String suffix, ConfigResolver configResolver) throws IOException {
         Path gvmPath = paths.getGvmPath();
         Path reflectionPath = gvmPath.resolve(
-                Strings.substitute( Constants.REFLECTION_ARCH_FILE, Map.of("archOs", suffix)));
+                Strings.substitute(Constants.REFLECTION_ARCH_FILE, Map.of("archOs", suffix)));
         Files.deleteIfExists(reflectionPath);
         try (BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(reflectionPath.toFile())))) {
             bw.write("[\n");
@@ -619,10 +642,10 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
         writeSingleEntry(bw, javaClass, exclude);
     }
 
-    private static void writeSingleEntry (BufferedWriter bw, String javaClass, boolean exclude) throws IOException {
+    private static void writeSingleEntry(BufferedWriter bw, String javaClass, boolean exclude) throws IOException {
         bw.write("  {\n");
         bw.write("    \"name\" : \"" + javaClass + "\"");
-        if (! exclude) {
+        if (!exclude) {
             bw.write(",\n");
             bw.write("    \"allDeclaredConstructors\" : true,\n");
             bw.write("    \"allPublicConstructors\" : true,\n");
@@ -739,6 +762,7 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
 
     /**
      * Allow platforms to check if specific libraries (e.g. libjvm.a) are present in the specified clib path
+     *
      * @param clibPath
      */
     void checkPlatformSpecificClibs(Path clibPath) throws IOException {
@@ -775,6 +799,10 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
 
     String getStaticLibraryFileExtension() {
         return "a";
+    }
+
+    String getSharedLibraryFileExtension() {
+        return "so";
     }
 
     String getLinkLibraryPathOption() {
@@ -817,8 +845,8 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
      * Return the arguments that need to be passed to the linker for including
      * the Java libraries in the final image.
      * Implementations can override this for providing the required syntax.
-     *
-     * TODO: the list of java libraries should be final (e.g. java, nio, net...) 
+     * <p>
+     * TODO: the list of java libraries should be final (e.g. java, nio, net...)
      * and separated from the linker options (e.g. -l, -Bstatic,...)
      *
      * @return a List of arguments that will be understood by the host-specific
@@ -838,7 +866,7 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
     }
 
     protected List<String> getTargetNativeCodeExtensions() {
-        return Arrays.asList(".c");
+        return Collections.singletonList(".c");
     }
 
     protected List<String> getNativeCodeList() throws IOException {
@@ -848,9 +876,9 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
         }
         List<String> extensions = getTargetNativeCodeExtensions();
         return Files.list(nativeCodeDir)
-            .map(p -> p.getFileName().toString())
-            .filter(s -> extensions.stream().anyMatch(e -> s.endsWith(e)))
-            .collect(Collectors.toList());
+                .map(p -> p.getFileName().toString())
+                .filter(s -> extensions.stream().anyMatch(s::endsWith))
+                .collect(Collectors.toList());
     }
 
     List<String> getTargetSpecificLinkFlags(boolean useJavaFX, boolean usePrismSW) throws IOException, InterruptedException {
@@ -882,21 +910,31 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
     /**
      * It generates the link flags for a given list of native libraries,
      * at a given location
+     *
      * @param libPath the path to the folder with the native libraries
-     * @param libs the list of names of native libraries
+     * @param libs    the list of names of native libraries
      * @return a list with link flag options
      */
     List<String> getTargetSpecificNativeLibsFlags(Path libPath, List<String> libs) {
         return Collections.emptyList();
     }
 
-    protected Path getCLibPath() {
+    protected Path getTargetCLibPath() {
         Triplet target = projectConfiguration.getTargetTriplet();
         return projectConfiguration.getGraalPath()
                 .resolve("lib")
                 .resolve("svm")
                 .resolve("clibraries")
-                .resolve(target.getOsArch2());
+                .resolve(target.getTargetValue());
+    }
+
+    protected Path getHostCLibPath() {
+        Triplet host = projectConfiguration.getHostTriplet();
+        return projectConfiguration.getGraalPath()
+                .resolve("lib")
+                .resolve("svm")
+                .resolve("clibraries")
+                .resolve(host.getTargetValue());
     }
 
     protected List<Path> getStaticJDKLibPaths() throws IOException {
@@ -905,15 +943,7 @@ public abstract class AbstractTargetConfiguration implements TargetConfiguration
             staticJDKLibPaths.add(projectConfiguration.getJavaStaticLibsPath());
         }
 
-        Triplet target = projectConfiguration.getTargetTriplet();
-        Path staticJDKLibPath = projectConfiguration.getGraalPath()
-                .resolve("lib")
-                .resolve("static")
-                .resolve(target.getOsArch2());
-        if (target.getOs().equals(Constants.OS_LINUX)) {
-            return Arrays.asList(staticJDKLibPath.resolve("glibc"));
-        } else {
-            return Arrays.asList(staticJDKLibPath);
-        }
+        staticJDKLibPaths.add(projectConfiguration.getDefaultJavaStaticLibsPath());
+        return staticJDKLibPaths;
     }
 }
