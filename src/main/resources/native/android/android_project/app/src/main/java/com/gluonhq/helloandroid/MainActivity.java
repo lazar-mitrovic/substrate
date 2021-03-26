@@ -60,7 +60,7 @@ import javafx.scene.input.KeyCode;
 public class MainActivity extends Activity implements SurfaceHolder.Callback,
         SurfaceHolder.Callback2 {
 
-    private static MainActivity   instance;
+    static MainActivity   instance;
     private static FrameLayout  mViewGroup;
     private static SurfaceView  mView;
     private long nativeWindowPtr;
@@ -75,16 +75,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        instance = this;
+
         Log.v(TAG, "onCreate start, using Android Logging v1");
         System.err.println("onCreate called, writing this to System.err");
         super.onCreate(savedInstanceState);
-
-        Log.v(TAG, "loading substrate library");
-        System.loadLibrary("substrate");
-        Log.v(TAG, "loaded substrate library");
-        Log.v(TAG, "loading app library");
-        System.loadLibrary("app");
-        Log.v(TAG, "loaded app library");
 
         getWindow().requestFeature(Window.FEATURE_NO_TITLE);
         getWindow().setSoftInputMode(
@@ -98,7 +93,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         mViewGroup = new FrameLayout(this);
         mViewGroup.addView(mView);
         setContentView(mViewGroup);
-        instance = this;
 
         imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
         Log.v(TAG, "onCreate done");
@@ -106,6 +100,22 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
+        try {
+            Log.v(TAG, "loading substrate library");
+            System.loadLibrary("substrate");
+            Log.v(TAG, "loaded substrate library");
+            Log.v(TAG, "loading app library");
+            System.loadLibrary("app");
+            Log.v(TAG, "loaded app library");
+        } catch (UnsatisfiedLinkError e) {
+            System.err.println("Loading native library failed: " + e.getMessage());
+            e.printStackTrace();
+            new MessageBox().show("Loading failed", "Main application library has failed to load. \n" +
+                    "You might want to reinstall application.");
+            this.finish();
+            System.exit(1);
+        }
+
         Log.v(TAG, "surfaceCreated for "+this);
         nativeSetSurface(holder.getSurface());
         DisplayMetrics metrics = new DisplayMetrics();

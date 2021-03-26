@@ -158,6 +158,7 @@ public class AndroidTargetConfiguration extends PosixTargetConfiguration {
                             "-p", getAndroidProjectPath().toString(),
                             "assemble" + configuration);
         assembleDebug.addToEnv("ANDROID_HOME", sdk);
+        assembleDebug.addToEnv("ANDROID_NDK_HOME", ndk);
         assembleDebug.addToEnv("JAVA_HOME", projectConfiguration.getGraalPath().toString());
         if (assembleDebug.runProcess("package-task") != 0) {
             return false;
